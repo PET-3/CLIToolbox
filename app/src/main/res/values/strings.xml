@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CLI Toolbox</string>
+
+    <string name="home_title">My Tools</string>
+    <string name="action_import_tool">Import Tool</string>
+    <string name="action_reanalyze">Re-analyze</string>
+    <string name="action_edit_schema">Edit Schema</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_run">Execute</string>
+    <string name="action_copy_command">Copy Command</string>
+    <string name="action_parse_command">Parse Command</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_save">Save</string>
+
+    <string name="analyzing_title">Analyzing…</string>
+    <string name="analyzing_version">Detecting version</string>
+    <string name="analyzing_help">Analyzing help output</string>
+    <string name="analyzing_args">Analyzing arguments</string>
+    <string name="analyzing_schema">Generating schema</string>
+
+    <string name="tab_gui">Graphical</string>
+    <string name="tab_command">Command</string>
+
+    <string name="unsupported_abi">This device does not support this tool\'s architecture.</string>
+    <string name="unknown_argument">Unknown argument</string>
+
+    <string name="execution_idle">Idle</string>
+    <string name="execution_running">Running…</string>
+    <string name="execution_success">Success</string>
+    <string name="execution_failed">Failed</string>
+    <string name="execution_cancelled">Cancelled</string>
+
+    <string name="history_title">History</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_theme">Theme</string>
+</resources>

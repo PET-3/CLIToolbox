@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CLI 工具箱</string>
+
+    <string name="home_title">我的工具</string>
+    <string name="action_import_tool">导入工具</string>
+    <string name="action_reanalyze">重新分析</string>
+    <string name="action_edit_schema">编辑 Schema</string>
+    <string name="action_delete">删除</string>
+    <string name="action_run">执行</string>
+    <string name="action_copy_command">复制命令</string>
+    <string name="action_parse_command">解析命令</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_save">保存</string>
+
+    <string name="analyzing_title">正在分析…</string>
+    <string name="analyzing_version">检测版本</string>
+    <string name="analyzing_help">分析帮助信息</string>
+    <string name="analyzing_args">分析参数</string>
+    <string name="analyzing_schema">生成 Schema</string>
+
+    <string name="tab_gui">图形化</string>
+    <string name="tab_command">命令</string>
+
+    <string name="unsupported_abi">当前设备不支持此工具架构。</string>
+    <string name="unknown_argument">未知参数</string>
+
+    <string name="execution_idle">空闲</string>
+    <string name="execution_running">运行中…</string>
+    <string name="execution_success">成功</string>
+    <string name="execution_failed">失败</string>
+    <string name="execution_cancelled">已取消</string>
+
+    <string name="history_title">历史记录</string>
+    <string name="settings_title">设置</string>
+    <string name="settings_language">语言</string>
+    <string name="settings_theme">主题</string>
+</resources>
