@@ -83,4 +83,89 @@ class CommandBuilderTest {
         assertEquals(listOf("ffmpeg", "-y"), argvTrue)
         assertEquals(listOf("ffmpeg"), argvFalse)
     }
+
+    @Test
+    fun `unknown arguments are re-emitted after recognized flags but before positionals`() {
+        val schema = ffmpegLikeSchema()
+        val state: SchemaState = mapOf(
+            "input_file" to ArgumentValue.Path("input.mp4"),
+            "video_codec" to ArgumentValue.Choice("libx265"),
+            "output_file" to ArgumentValue.Path("output.mp4")
+        )
+        val unknown = listOf(UnknownArgument("u1", flag = "--custom-option", value = "test"))
+
+        val argv = CommandBuilder.buildArgv(schema, state, unknown)
+
+        assertEquals(
+            listOf("ffmpeg", "-i", "input.mp4", "-c:v", "libx265", "--custom-option", "test", "output.mp4"),
+            argv
+        )
+    }
+
+    @Test
+    fun `unknown argument with no value emits only its flag`() {
+        val schema = ffmpegLikeSchema()
+        val state: SchemaState = mapOf(
+            "input_file" to ArgumentValue.Path("in.mp4"),
+            "output_file" to ArgumentValue.Path("out.mp4")
+        )
+        val unknown = listOf(UnknownArgument("u1", flag = "--verbose", value = null))
+
+        val argv = CommandBuilder.buildArgv(schema, state, unknown)
+
+        assertEquals(listOf("ffmpeg", "-i", "in.mp4", "--verbose", "out.mp4"), argv)
+    }
+
+    @Test
+    fun `flagOrder preserves original interleaved position of known and unknown flags`() {
+        val schema = ffmpegLikeSchema()
+        val state: SchemaState = mapOf(
+            "input_file" to ArgumentValue.Path("in.mp4"),
+            "video_codec" to ArgumentValue.Choice("libx265"),
+            "output_file" to ArgumentValue.Path("out.mp4")
+        )
+        val unknown = listOf(UnknownArgument("u1", flag = "--custom-option", value = "test"))
+        // Original order was: unknown, then input_file, then video_codec.
+        val flagOrder = listOf("u1", "input_file", "video_codec")
+
+        val argv = CommandBuilder.buildArgv(schema, state, unknown, flagOrder)
+
+        assertEquals(
+            listOf("ffmpeg", "--custom-option", "test", "-i", "in.mp4", "-c:v", "libx265", "out.mp4"),
+            argv
+        )
+    }
+
+    @Test
+    fun `flagOrder still emits values set via GUI after parsing, appended after the preserved order`() {
+        val schema = ffmpegLikeSchema()
+        // Simulates: user parsed "-i in.mp4 out.mp4" (flagOrder=[input_file]) then
+        // additionally set video_codec via the GUI, which was never in flagOrder.
+        val state: SchemaState = mapOf(
+            "input_file" to ArgumentValue.Path("in.mp4"),
+            "video_codec" to ArgumentValue.Choice("libx265"),
+            "output_file" to ArgumentValue.Path("out.mp4")
+        )
+        val flagOrder = listOf("input_file")
+
+        val argv = CommandBuilder.buildArgv(schema, state, emptyList(), flagOrder)
+
+        assertEquals(listOf("ffmpeg", "-i", "in.mp4", "-c:v", "libx265", "out.mp4"), argv)
+    }
+
+    @Test
+    fun `a repeated id in flagOrder only uses its first position, not duplicated`() {
+        val schema = ffmpegLikeSchema()
+        val state: SchemaState = mapOf(
+            "input_file" to ArgumentValue.Path("in.mp4"),
+            "output_file" to ArgumentValue.Path("out.mp4")
+        )
+        // Defensive case: flagOrder should never legitimately contain a duplicate,
+        // but the builder must not emit the same flag twice if it somehow does.
+        val flagOrder = listOf("input_file", "input_file")
+
+        val argv = CommandBuilder.buildArgv(schema, state, emptyList(), flagOrder)
+
+        assertEquals(listOf("ffmpeg", "-i", "in.mp4", "out.mp4"), argv)
+    }
 }

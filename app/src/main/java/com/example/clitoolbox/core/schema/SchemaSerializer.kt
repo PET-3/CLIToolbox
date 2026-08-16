@@ -49,6 +49,8 @@ object SchemaSerializer {
         put("order", arg.order)
         put("recognized", arg.recognized)
         put("joinedWithValue", arg.joinedWithValue)
+        put("isOutputPath", arg.isOutputPath)
+        put("valuesSource", arg.valuesSource ?: JSONObject.NULL)
     }
 
     fun fromJsonString(text: String): ToolSchema = fromJson(JSONObject(text))
@@ -98,7 +100,9 @@ object SchemaSerializer {
             step = if (json.has("step")) json.optDouble("step") else null,
             order = json.optInt("order", 0),
             recognized = json.optBoolean("recognized", true),
-            joinedWithValue = json.optBoolean("joinedWithValue", false)
+            joinedWithValue = json.optBoolean("joinedWithValue", false),
+            isOutputPath = json.optBoolean("isOutputPath", false),
+            valuesSource = if (json.isNull("valuesSource")) null else json.optString("valuesSource").ifBlank { null }
         )
     }
 }

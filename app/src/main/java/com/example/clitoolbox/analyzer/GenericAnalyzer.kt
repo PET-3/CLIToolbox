@@ -70,26 +70,45 @@ open class GenericAnalyzer : ToolAnalyzer {
     }
 
     /**
-     * Very generic "-x, --long VALUE   description" line scanner. This is
-     * intentionally conservative: anything it can't confidently parse becomes
-     * a recognized=false TEXT argument rather than being dropped.
+     * Generic help-text line scanner. Recognizes flags across several common
+     * conventions without assuming any single CLI's exact style:
+     *   --input FILE          (space + ALL-CAPS metavar)
+     *   --input <FILE>        (space + bracketed metavar, any case)
+     *   --input=FILE          (= joined metavar, any case — unambiguous separator)
+     *   -i FILE / -i <FILE>   (short flag, same rules)
+     *   -i, --input FILE      (short+long combined via comma)
+     * Flag names may contain letters, digits, underscores, hyphens, and colons
+     * (e.g. "-filter_complex", "-hide_banner", "-profile:v", "-c:a") — all
+     * common in real-world CLI tools (FFmpeg especially uses "_" and ":"
+     * heavily), not just the plain-hyphenated subset.
+     * A lowercase, unbracketed metavar with no "=" (e.g. "--input file   ...")
+     * is intentionally NOT parsed as a value placeholder — there's no reliable
+     * way to distinguish that from the first word of the description — so
+     * that case is conservatively kept as a FLAG with the full remainder kept
+     * as its description, rather than risking a wrong parse. Section headers
+     * like "OPTIONS" / "POSITIONAL ARGUMENTS" don't start with "-" so they're
+     * naturally skipped rather than mis-parsed.
      */
     private val flagLineRegex = Regex(
-        """^\s*(-{1,2}[A-Za-z0-9][A-Za-z0-9-]*)(?:[,\s]+(-{1,2}[A-Za-z0-9][A-Za-z0-9-]*))?\s*(?:[<\[]?([A-Z][A-Z0-9_]*)[>\]]?)?\s{2,}(.*)$"""
+        """^\s*(?<flag1>-{1,2}[A-Za-z][A-Za-z0-9_:-]*)(?:,\s*(?<flag2>-{1,2}[A-Za-z][A-Za-z0-9_:-]*))?(?:=(?<eqValue><?[A-Za-z0-9_-]+>?)|\s+(?<spaceValue><[A-Za-z0-9_-]+>|[A-Z][A-Z0-9_-]*))?(?:\t+|\s{2,})(?<description>.*)$"""
     )
 
-    private fun parseHelpText(text: String): List<SchemaArgument> {
+    /** Visible for testing: parses generic `--help` text without needing a real process. */
+    internal fun parseHelpText(text: String): List<SchemaArgument> {
         val results = mutableListOf<SchemaArgument>()
         var order = 0
         for (rawLine in text.lineSequence()) {
             val match = flagLineRegex.find(rawLine) ?: continue
-            val (first, second, valueHint, description) = match.destructured
-            val flag = second.ifBlank { first }
+            val flag = match.groups["flag2"]?.value ?: match.groups["flag1"]!!.value
             if (results.any { it.flag == flag }) continue
 
+            val valueHint = match.groups["eqValue"]?.value ?: match.groups["spaceValue"]?.value
+            val description = match.groups["description"]?.value
+
             val type = when {
-                valueHint.isBlank() -> ArgumentType.FLAG
-                valueHint.contains("NUM") || valueHint.contains("INT") -> ArgumentType.NUMBER
+                valueHint == null -> ArgumentType.FLAG
+                valueHint.contains("NUM", ignoreCase = true) || valueHint.contains("INT", ignoreCase = true) ||
+                    valueHint.contains("COUNT", ignoreCase = true) -> ArgumentType.NUMBER
                 else -> ArgumentType.TEXT
             }
 
@@ -98,7 +117,7 @@ open class GenericAnalyzer : ToolAnalyzer {
                     id = flag.trimStart('-').replace(Regex("[^A-Za-z0-9]+"), "_"),
                     flag = flag,
                     label = flag.trimStart('-').replaceFirstChar { it.uppercase() },
-                    description = description.trim().ifBlank { null },
+                    description = description?.trim()?.ifBlank { null },
                     type = type,
                     order = order++,
                     recognized = true

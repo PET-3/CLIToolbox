@@ -11,6 +11,7 @@ sealed class ImportAndAnalyzeResult {
     data class Success(val tool: Tool) : ImportAndAnalyzeResult()
     data class ImportFailed(val reason: String) : ImportAndAnalyzeResult()
     data class UnsupportedArchitecture(val architecture: com.example.clitoolbox.core.model.ToolArchitecture) : ImportAndAnalyzeResult()
+    data class IncompatibleRuntime(val reason: String) : ImportAndAnalyzeResult()
     data class AnalysisFailed(val tool: Tool, val reason: String) : ImportAndAnalyzeResult()
 }
 
@@ -29,6 +30,7 @@ class ToolManager(context: Context) {
         return when (val importResult = importer.importFromUri(uri, displayName)) {
             is ImportResult.Failure -> ImportAndAnalyzeResult.ImportFailed(importResult.reason)
             is ImportResult.UnsupportedArchitecture -> ImportAndAnalyzeResult.UnsupportedArchitecture(importResult.architecture)
+            is ImportResult.IncompatibleRuntime -> ImportAndAnalyzeResult.IncompatibleRuntime(importResult.reason)
             is ImportResult.Success -> {
                 val analyzed = analyzeAndSave(importResult.tool)
                 analyzed

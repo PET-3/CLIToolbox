@@ -26,7 +26,15 @@ import java.util.UUID
 @Composable
 fun ExecutionScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val pending = ExecutionSession.pending
+    // Capture the pending job once, atomically clearing the singleton in the
+    // same step. This is the fix for a real lifecycle bug: previously `pending`
+    // was read fresh from the singleton on every composition, and `started`
+    // (a plain, non-saveable `remember`) resets on any full recomposition
+    // (e.g. a configuration change) — so a rotation while ExecutionSession
+    // still held the same pending job could silently re-run the command.
+    // Clearing the singleton the instant we consume it means no other
+    // composition of this screen can ever pick up the same job again.
+    val pending = remember { ExecutionSession.pending.also { ExecutionSession.pending = null } }
     val historyRepo = remember { HistoryRepository(context) }
     val executor = remember { CommandExecutor() }
     val scope = rememberCoroutineScope()

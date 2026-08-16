@@ -18,6 +18,7 @@ import com.example.clitoolbox.ui.settings.SettingsScreen
 import com.example.clitoolbox.ui.settings.SettingsStore
 import com.example.clitoolbox.ui.theme.CliToolboxTheme
 import com.example.clitoolbox.ui.tool.ToolDetailScreen
+import com.example.clitoolbox.tool.PendingCommandLoad
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,6 +80,10 @@ private fun AppNavHost(onThemeChanged: () -> Unit) {
             HistoryScreen(
                 onBack = { navController.popBackStack() },
                 onReloadCommand = { entry ->
+                    PendingCommandLoad.pending = PendingCommandLoad.Pending(
+                        toolId = entry.toolId,
+                        commandString = entry.commandString
+                    )
                     navController.popBackStack()
                     navController.navigate(Routes.tool(entry.toolId))
                 }

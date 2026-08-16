@@ -46,6 +46,20 @@ Settings lets you switch theme (System/Light/Dark) and language (System/English/
 
 Requirements: JDK 17, Android SDK (compileSdk 34).
 
+**⚠ One-time setup required before this will build:** `gradle/wrapper/gradle-wrapper.jar` is **not**
+committed to this repository — it's a binary file that could not be produced in the environment this
+project was developed in (no network access to download it, no local JDK/Gradle to generate it from). Run
+this once, from any machine with a JDK and either a local Gradle install or network access:
+
+```bash
+gradle wrapper --gradle-version 8.9 --distribution-type all
+git add gradle/wrapper/gradle-wrapper.jar
+git commit -m "Add Gradle wrapper jar"
+```
+
+After that one-time commit, `./gradlew` works for everyone who clones the repo from then on — this is not
+a per-checkout step. See `FINAL_REPORT.md` §17 for the full explanation.
+
 ```bash
 git clone <this-repo>
 cd CLIToolbox
@@ -53,11 +67,6 @@ cd CLIToolbox
 ```
 
 The APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
-
-> **Note on the Gradle wrapper jar:** `gradle/wrapper/gradle-wrapper.properties`, `gradlew`, and
-> `gradlew.bat` are committed. If your checkout is missing the binary `gradle-wrapper.jar` (some git hosts/
-> zip exports strip binaries), regenerate it once with a local Gradle install: `gradle wrapper --gradle-version 8.7 --distribution-type all`.
-> The CI workflow does this automatically on every run, so GitHub Actions builds are unaffected either way.
 
 Run unit tests only:
 
@@ -68,34 +77,45 @@ Run unit tests only:
 ## GitHub Actions
 
 `.github/workflows/build.yml` runs on every push to `main` and every pull request (plus manual
-`workflow_dispatch`): checkout → JDK 17 → Gradle setup → regenerate the wrapper jar if absent → `./gradlew
-test` → `./gradlew assembleDebug` → upload `cli-toolbox-debug.apk` as a build artifact. No signing key or
-Keystore is required — this is a debug-only build for now.
+`workflow_dispatch`): checkout → JDK 17 → Gradle 8.9 setup → `./gradlew test` → `./gradlew assembleDebug` →
+locate the APK → upload `cli-toolbox-debug.apk` as a build artifact. No signing key, Keystore, or Play
+Store step — debug APK only, as scoped for this phase. **This workflow will fail until the one-time
+`gradle-wrapper.jar` setup above is committed** — see `FINAL_REPORT.md` §17.
 
 ## Project layout
 
 ```
 app/src/main/java/com/example/clitoolbox/
 ├── core/
-│   ├── model/       Tool, ToolArchitecture, ToolSource
+│   ├── model/       Tool, ToolArchitecture, AndroidCompatibility, ToolSource
 │   ├── schema/       ToolSchema, SchemaGroup, SchemaArgument, ArgumentType, JSON (de)serialization
 │   ├── parser/       ShellTokenizer (quote-aware command-line tokenizing)
 │   └── executor/     ProcessRunner (short probes), CommandExecutor (streaming, cancellable)
-├── tool/             ToolManager, ToolImporter (SAF import + ELF/ABI checks), ToolRepository (JSON
-│                     persistence), HistoryRepository, ExecutionSession
-├── analyzer/         ToolAnalyzer, GenericAnalyzer, FfmpegAnalyzer, SevenZipAnalyzer, AnalyzerRegistry
-├── command/          CommandBuilder (Schema+state → argv), CommandParser (command string → state)
+├── tool/             ToolManager, ToolImporter (SAF import + ELF/ABI/glibc-compatibility checks),
+│                     ToolRepository (JSON persistence), HistoryRepository, ExecutionSession,
+│                     PendingCommandLoad (History → GUI reload handoff)
+├── analyzer/         ToolAnalyzer, GenericAnalyzer, FfmpegAnalyzer, SevenZipAnalyzer, AnalyzerRegistry,
+│                     DynamicValueProvider (extension point for tool-build-dependent value lists)
+├── command/          CommandBuilder (Schema+state+unknownArgs → argv), CommandParser (command string →
+│                     ParsedCommandState), OutputPathResolver (safe output filename resolution)
 ├── ui/               home/, tool/, schema/ (GUI Generator + Schema Editor), execute/, history/, settings/
 └── MainActivity.kt   Navigation-Compose host wiring all screens together
 ```
 
-## Known limitations (first phase)
+## Known limitations
 
 - Only `arm64-v8a` and `armeabi-v7a` are targeted; no bundled tool binaries ship with the app — the user
   supplies their own.
-- `GenericAnalyzer`'s help-text scanner is a best-effort regex over common `-x, --long VALUE  description`
-  layouts; unusual help formats will surface more arguments as "unknown" (which is still safe — nothing is
-  dropped, and the Schema Editor can fix it up).
-- No accounts, cloud sync, online tool marketplace, or plugin marketplace — intentionally out of scope for
-  this phase.
+- `GenericAnalyzer`'s help-text scanner handles several common layouts (`--flag FILE`, `--flag <FILE>`,
+  `--flag=FILE`, short/long combined via comma) but still can't disambiguate a lowercase, unbracketed
+  metavar with no `=` from the first word of a description — it conservatively treats the flag as valueless
+  in that case. Nothing is ever dropped either way — unmatched flags still work via the Command tab's
+  unknown-argument handling.
+- `ElfInspector`'s Android-compatibility check (PT_INTERP classification + GLIBC_ symbol-version scan) is a
+  real static heuristic, not exhaustive — it can't catch every possible runtime incompatibility.
+- No accounts, cloud sync, online tool marketplace, or plugin marketplace — intentionally out of scope.
 - Release signing / Play Store packaging is not set up; only `assembleDebug` is wired into CI.
+- **`gradle-wrapper.jar` is not committed** — see the one-time setup step above and `FINAL_REPORT.md` §17
+  for why, and exactly what to run once to fix it.
+- This codebase has not been compiled or test-run in the environment it was developed in (no network/JDK/
+  Gradle available there) — see `FINAL_REPORT.md` for the full, honest verification status of every piece.

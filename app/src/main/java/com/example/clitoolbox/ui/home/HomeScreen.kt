@@ -56,6 +56,7 @@ fun HomeScreen(
                 is ImportAndAnalyzeResult.ImportFailed -> errorMessage = result.reason
                 is ImportAndAnalyzeResult.UnsupportedArchitecture ->
                     errorMessage = "Unsupported architecture: ${result.architecture}"
+                is ImportAndAnalyzeResult.IncompatibleRuntime -> errorMessage = result.reason
             }
         }
     }
@@ -155,6 +156,9 @@ private fun ToolCard(
                 Text(tool.name, style = MaterialTheme.typography.titleMedium)
                 val version = tool.version?.let { " · $it" } ?: ""
                 Text("${tool.architecture}$version", style = MaterialTheme.typography.bodySmall)
+                if (tool.androidCompatibility == com.example.clitoolbox.core.model.AndroidCompatibility.UNKNOWN) {
+                    Text("⚠ Android compatibility could not be confirmed", style = MaterialTheme.typography.labelSmall)
+                }
                 tool.analysisSummary?.let { s ->
                     val status = if (s.succeeded) {
                         "${s.recognizedArguments} recognized, ${s.unknownArguments} unknown"

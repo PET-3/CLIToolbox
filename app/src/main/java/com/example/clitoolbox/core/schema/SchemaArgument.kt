@@ -23,7 +23,24 @@ data class SchemaArgument(
     /** True if an Analyzer matched this against known documentation; false = unknown/user-added. */
     val recognized: Boolean = true,
     /** Whether the flag and value are written as one joined token (e.g. -crf28) vs two tokens. */
-    val joinedWithValue: Boolean = false
+    val joinedWithValue: Boolean = false,
+    /**
+     * Marks a FILE-typed argument as an *output* path the user types (with
+     * optional {input_name}/{input_stem}/{input_ext} template variables)
+     * rather than an existing file picked via Storage Access Framework. The
+     * GUI Generator validates these through [com.example.clitoolbox.command.OutputPathResolver]
+     * instead of showing a file-browse picker.
+     */
+    val isOutputPath: Boolean = false,
+    /**
+     * Optional id of a [com.example.clitoolbox.analyzer.DynamicValueProvider]
+     * that produced (or could refresh) this argument's `values`. Purely
+     * informational for SELECT/MULTI_SELECT arguments whose value list was
+     * generated dynamically at analysis time rather than hardcoded — lets a
+     * future re-analysis (or a smarter GUI) know it can re-resolve `values`
+     * instead of treating them as fixed.
+     */
+    val valuesSource: String? = null
 )
 
 data class SchemaGroup(

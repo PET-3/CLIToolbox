@@ -3,6 +3,7 @@ package com.example.clitoolbox.tool
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import com.example.clitoolbox.core.model.AndroidCompatibility
 import com.example.clitoolbox.core.model.Tool
 import com.example.clitoolbox.core.model.ToolArchitecture
 import com.example.clitoolbox.core.model.ToolSource
@@ -13,6 +14,8 @@ sealed class ImportResult {
     data class Success(val tool: Tool) : ImportResult()
     data class Failure(val reason: String) : ImportResult()
     data class UnsupportedArchitecture(val architecture: ToolArchitecture) : ImportResult()
+    /** ABI matched, but static inspection strongly indicates a glibc (non-Android) Linux build. */
+    data class IncompatibleRuntime(val reason: String) : ImportResult()
 }
 
 /**
@@ -58,8 +61,21 @@ class ToolImporter(private val context: Context) {
             }
 
             val supportedAbis = Build.SUPPORTED_ABIS.toList()
-            if (!ElfInspector.isSupportedOnThisDevice(elfInfo.architecture, supportedAbis)) {
+            if (!ElfInspector.isAbiSupportedOnThisDevice(elfInfo.architecture, supportedAbis)) {
+                destFile.delete()
                 return ImportResult.UnsupportedArchitecture(elfInfo.architecture)
+            }
+
+            // ABI matching alone doesn't mean the binary will actually run — a
+            // glibc-linked Linux build can still be arm64-v8a. Check for that
+            // before accepting the import.
+            val compatibility = ElfInspector.inspectAndroidCompatibility(destFile)
+            if (compatibility == AndroidCompatibility.LIKELY_INCOMPATIBLE_GLIBC) {
+                destFile.delete()
+                return ImportResult.IncompatibleRuntime(
+                    "This appears to be a standard Linux (glibc) executable, not an Android build. " +
+                        "It will very likely fail to launch on this device even though its CPU architecture matches."
+                )
             }
 
             ImportResult.Success(
@@ -68,6 +84,7 @@ class ToolImporter(private val context: Context) {
                     name = displayNameFor(name),
                     executableName = name,
                     architecture = elfInfo.architecture,
+                    androidCompatibility = compatibility,
                     source = ToolSource.IMPORTED,
                     binaryPath = destFile.absolutePath
                 )

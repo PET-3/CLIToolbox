@@ -2,6 +2,7 @@ package com.example.clitoolbox.tool
 
 import android.content.Context
 import com.example.clitoolbox.core.model.AnalysisSummary
+import com.example.clitoolbox.core.model.AndroidCompatibility
 import com.example.clitoolbox.core.model.Tool
 import com.example.clitoolbox.core.model.ToolArchitecture
 import com.example.clitoolbox.core.model.ToolSource
@@ -34,6 +35,7 @@ class ToolRepository(context: Context) {
             put("executableName", tool.executableName)
             put("version", tool.version ?: JSONObject.NULL)
             put("architecture", tool.architecture.name)
+            put("androidCompatibility", tool.androidCompatibility.name)
             put("source", tool.source.name)
             put("binaryPath", tool.binaryPath)
             put("schema", tool.schema?.let { SchemaSerializer.toJson(it) } ?: JSONObject.NULL)
@@ -66,6 +68,8 @@ class ToolRepository(context: Context) {
                 version = if (json.isNull("version")) null else json.optString("version"),
                 architecture = runCatching { ToolArchitecture.valueOf(json.getString("architecture")) }
                     .getOrDefault(ToolArchitecture.UNKNOWN),
+                androidCompatibility = runCatching { AndroidCompatibility.valueOf(json.optString("androidCompatibility")) }
+                    .getOrDefault(AndroidCompatibility.UNKNOWN),
                 source = runCatching { ToolSource.valueOf(json.getString("source")) }
                     .getOrDefault(ToolSource.IMPORTED),
                 binaryPath = json.getString("binaryPath"),

@@ -9,6 +9,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.clitoolbox.command.ArgumentValue
+import com.example.clitoolbox.command.OutputPathResolver
+import com.example.clitoolbox.command.OutputPathResult
 import com.example.clitoolbox.command.SchemaState
 import com.example.clitoolbox.core.schema.ArgumentType
 import com.example.clitoolbox.core.schema.SchemaArgument
@@ -31,7 +33,12 @@ fun SchemaDrivenForm(
         schema.groups.sortedBy { it.order }.forEach { group ->
             Text(group.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
             group.arguments.sortedBy { it.order }.forEach { arg ->
-                ArgumentWidget(arg, state[arg.id], onValueChange = { onStateChange(arg.id, it) })
+                ArgumentWidget(
+                    arg,
+                    state[arg.id],
+                    onValueChange = { onStateChange(arg.id, it) },
+                    referenceInputPath = referenceInputPathFor(schema, state, arg)
+                )
                 if (!arg.recognized) {
                     Text("⚠ ${arg.flag ?: arg.id} (unrecognized)", style = MaterialTheme.typography.labelSmall)
                 }
@@ -41,9 +48,26 @@ fun SchemaDrivenForm(
     }
 }
 
+/**
+ * For an output-path argument, finds the value of the first non-output
+ * FILE-typed argument in the Schema to use as the {input_name}/{input_stem}/
+ * {input_ext} template source. Best-effort — if no such argument has a value
+ * yet, template variables simply resolve to empty strings.
+ */
+private fun referenceInputPathFor(schema: ToolSchema, state: SchemaState, arg: SchemaArgument): String? {
+    if (!arg.isOutputPath) return null
+    val inputArg = schema.allArguments().firstOrNull { it.type == ArgumentType.FILE && !it.isOutputPath } ?: return null
+    return (state[inputArg.id] as? ArgumentValue.Path)?.value
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ArgumentWidget(arg: SchemaArgument, value: ArgumentValue?, onValueChange: (ArgumentValue?) -> Unit) {
+private fun ArgumentWidget(
+    arg: SchemaArgument,
+    value: ArgumentValue?,
+    onValueChange: (ArgumentValue?) -> Unit,
+    referenceInputPath: String? = null
+) {
     when (arg.type) {
         ArgumentType.TEXT -> {
             val text = (value as? ArgumentValue.Text)?.value ?: ""
@@ -120,7 +144,11 @@ private fun ArgumentWidget(arg: SchemaArgument, value: ArgumentValue?, onValueCh
             }
         }
         ArgumentType.FILE, ArgumentType.FILES, ArgumentType.DIRECTORY -> {
-            FilePickerField(arg, value, onValueChange)
+            if (arg.isOutputPath) {
+                OutputPathField(arg, value, referenceInputPath, onValueChange)
+            } else {
+                FilePickerField(arg, value, onValueChange)
+            }
         }
     }
 }
@@ -148,6 +176,46 @@ private fun FilePickerField(arg: SchemaArgument, value: ArgumentValue?, onValueC
         label = { Text(arg.label) },
         trailingIcon = {
             TextButton(onClick = { launcher.launch(if (pickMultiple) arrayOf("*/*") else arrayOf("*/*")) }) { Text("Browse") }
+        },
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+@Composable
+private fun OutputPathField(
+    arg: SchemaArgument,
+    value: ArgumentValue?,
+    referenceInputPath: String?,
+    onValueChange: (ArgumentValue?) -> Unit
+) {
+    // Raw text is tracked separately from the committed value so the user can
+    // keep typing through an intermediate invalid state (e.g. while typing "..")
+    // without the field fighting them — but nothing invalid is ever committed
+    // to GUI state / passed to CommandBuilder.
+    var rawText by remember(value) {
+        mutableStateOf((value as? ArgumentValue.Path)?.value ?: "")
+    }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    OutlinedTextField(
+        value = rawText,
+        onValueChange = { text ->
+            rawText = text
+            when (val result = OutputPathResolver.resolve(text, referenceInputPath)) {
+                is OutputPathResult.Resolved -> {
+                    error = null
+                    onValueChange(ArgumentValue.Path(result.fileName))
+                }
+                is OutputPathResult.Rejected -> {
+                    error = result.reason
+                    onValueChange(null)
+                }
+            }
+        },
+        label = { Text(arg.label) },
+        isError = error != null,
+        supportingText = {
+            Text(error ?: arg.description ?: "File name only — supports {input_name}, {input_stem}, {input_ext}")
         },
         modifier = Modifier.fillMaxWidth()
     )
