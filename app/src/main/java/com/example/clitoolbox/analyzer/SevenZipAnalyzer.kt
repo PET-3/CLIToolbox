@@ -6,20 +6,24 @@ import com.example.clitoolbox.core.schema.ArgumentType
 import com.example.clitoolbox.core.schema.SchemaArgument
 import com.example.clitoolbox.core.schema.SchemaGroup
 import com.example.clitoolbox.core.schema.ToolSchema
+import com.example.clitoolbox.tool.ExecutableNameMatcher
 import java.io.File
 
 /**
- * Specialized analyzer for 7-Zip (7z / 7zz). Produces a Schema covering the
- * common command letters (a/x/e/l/t) and switches (-o/-p/-mx/-r/-y/-sdel).
- * The "command" (a/x/e/l/t) is modeled as a required SELECT positional so
- * the GUI shows one dropdown ("Action") instead of five booleans.
+ * Specialized analyzer for 7-Zip (7z / 7za / 7zr / 7zz / 7zzs). Produces a
+ * Schema with four distinct groups — Action, Archive, Input Files, Options —
+ * covering the command letters (a/x/e/l/t) and switches
+ * (-o/-p/-mx/-r/-y/-t/-sdel). "Action" (a/x/e/l/t) is modeled as a required
+ * SELECT positional, not a plain Option, so the GUI shows one dropdown
+ * instead of five booleans.
  */
 class SevenZipAnalyzer : GenericAnalyzer() {
 
-    override fun supports(tool: Tool): Boolean {
-        val name = tool.executableName.lowercase()
-        return name == "7z" || name == "7zz" || name.endsWith("/7z") || name.endsWith("/7zz")
-    }
+    /** Known 7-Zip family binary base names (after [ExecutableNameMatcher.normalize]). */
+    private val knownBaseNames = setOf("7z", "7za", "7zr", "7zz", "7zzs")
+
+    override fun supports(tool: Tool): Boolean =
+        ExecutableNameMatcher.matchesAnyOf(tool.executableName, knownBaseNames)
 
     override fun analyze(tool: Tool): ToolAnalysisResult {
         val binary = File(tool.binaryPath)
@@ -39,14 +43,26 @@ class SevenZipAnalyzer : GenericAnalyzer() {
                     required = true, order = 0,
                     values = listOf("a", "x", "e", "l", "t"),
                     description = "a=add, x=extract with paths, e=extract flat, l=list, t=test"
-                ),
-                SchemaArgument(id = "archive", flag = null, label = "Archive File", type = ArgumentType.FILE, required = true, order = 1),
-                SchemaArgument(id = "input_files", flag = null, label = "Files to Add", type = ArgumentType.FILES, order = 2)
+                )
+            )
+        )
+
+        val archiveGroup = SchemaGroup(
+            id = "archive", name = "Archive", order = 1,
+            arguments = listOf(
+                SchemaArgument(id = "archive", flag = null, label = "Archive", type = ArgumentType.FILE, required = true, order = 0)
+            )
+        )
+
+        val inputFilesGroup = SchemaGroup(
+            id = "input_files_group", name = "Input Files", order = 2,
+            arguments = listOf(
+                SchemaArgument(id = "input_files", flag = null, label = "Input Files", type = ArgumentType.FILES, order = 0)
             )
         )
 
         val optionsGroup = SchemaGroup(
-            id = "options", name = "Options", order = 1,
+            id = "options", name = "Options", order = 3,
             arguments = listOf(
                 SchemaArgument(id = "output_dir", flag = "-o", label = "Output Directory", type = ArgumentType.DIRECTORY, order = 0, joinedWithValue = true),
                 SchemaArgument(id = "password", flag = "-p", label = "Password", type = ArgumentType.TEXT, order = 1, joinedWithValue = true),
@@ -62,7 +78,7 @@ class SevenZipAnalyzer : GenericAnalyzer() {
         val schema = ToolSchema(
             toolName = tool.name.ifBlank { "7-Zip" },
             executable = tool.executableName,
-            groups = listOf(actionGroup, optionsGroup),
+            groups = listOf(actionGroup, archiveGroup, inputFilesGroup, optionsGroup),
             positionalOrder = listOf("command", "archive", "input_files")
         )
 

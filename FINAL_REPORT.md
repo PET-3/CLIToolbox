@@ -313,3 +313,82 @@ case, 1 existing test upgraded from set-equality to exact-order), `FfmpegAnalyze
 across 8 files. Same caveat as before: written and hand-traced against the actual implementation, not
 executed, for the same environment reasons as §17.
 
+## 21. Phase 4 — real device bug report: 7-Zip Schema/Parser fix
+
+This pass started from an actual on-device report, not a self-audit: running `7zz a test.7z test.txt`
+showed only an empty "Options" group in Graphical, and **all four tokens — including the executable "7zz"
+itself** — landed in Unknown Arguments.
+
+**Root cause, confirmed by tracing the actual code (not assumed):** `SevenZipAnalyzer.supports()` and
+`CommandParser`'s "drop the executable token" check both did *exact* string matching against
+`Tool.executableName`. If the imported tool's stored `executableName` wasn't a byte-for-byte match for
+what the user typed (a version-suffixed filename like `7zz_26`, a `.exe` extension, a case difference, or
+an SAF-assigned disambiguation suffix) — either check silently fails. When `supports()` fails, the tool
+falls through to `GenericAnalyzer`, whose schema is a single group literally named **"Options"** with zero
+positional arguments (it only ever parses `-flag`-style lines from `--help` text) — which is exactly the
+broken screen reported: an empty "Options" group, and every bare token (having no positional slot to land
+in) falling into Unknown Arguments, including the executable itself once the drop-check *also* failed for
+the same underlying reason.
+
+**Fix — one new component, used in both places that had the bug:**
+`tool/ExecutableNameMatcher.kt` — normalizes a name (strip path, lowercase, drop a trailing `.exe`/`.bin`,
+drop one trailing version-ish suffix like `_26` or `-2.1`) and compares normalized forms.
+`SevenZipAnalyzer.supports()` now checks the normalized name against `{7z, 7za, 7zr, 7zz, 7zzs}` instead of
+an exact/endsWith check. `CommandParser.parse()`'s executable-drop check now uses the same matcher instead
+of exact/endsWith comparison. Verified with a dedicated `ExecutableNameMatcherTest` (8 cases) plus new
+regression cases directly in `SevenZipAnalyzerTest` using tools stored as `7zz_26` and `7zz.exe`.
+
+**Also fixed while verifying the full command set from the report:**
+- `SevenZipAnalyzer`'s schema was restructured from 2 groups into the 4 the report asked for — **Action**,
+  **Archive**, **Input Files**, **Options** — so the Graphical tab now shows all four as distinct sections
+  once a Schema is present (this was a schema-shape gap, not a GUI rendering bug — `GuiGenerator` and
+  `SchemaEditorScreen` already iterate `schema.groups` generically with no hardcoded count/index, confirmed
+  by reading both, so no GUI code needed to change for this).
+- `-mx=9` (an `=`-joined value, as opposed to `-mx9` fully joined) was parsed *wrong*, not un-parsed: the
+  literal `"="` was left in the captured value (`compression_level` would end up `"=9"`, not `9`). Caught
+  while tracing `testParseJoinedOutputOption` by hand. `CommandParser.findJoinedPrefixArgument` now strips
+  an optional leading `=` from the remainder after the flag prefix, for every `joinedWithValue` argument
+  generically (not special-cased to `-mx`).
+- The Graphical tab's "Unknown Arguments" section used to always render — a header plus a "None — every
+  argument matches the Schema" line — even when empty, which is presumably why the *entire* broken screen
+  read as "just Unknown Arguments" to begin with. It's now fully absent when there's nothing unknown (only
+  a small "+ Add unknown argument" text button remains, so manually adding one is still possible).
+
+**New tests, using the exact function names requested:** `testParseSevenZipAdd`, `testParseSevenZipExtract`,
+`testParseSevenZipList`, `testParseSevenZipTest`, `testParseMultipleInputFiles`,
+`testParseJoinedOutputOption`, `testExecutableIsNotUnknownArgument`, `testUnknownSevenZipArgumentIsPreserved`,
+`testBuildSevenZipCommand` — all added to `SevenZipAnalyzerTest.kt`, plus the new `ExecutableNameMatcherTest.kt`
+(8 cases). 22 new test methods this pass; 63 total across 9 files now.
+
+**On "executable" as a field:** the report's expected `ParsedCommandState` shows `executable = 7zz` as a
+field. `ParsedCommandState` doesn't store one — architecturally, the executable was never part of *parsed
+argument* state; `CommandParser.parse()` strips it before parsing and `CommandBuilder` always prepends
+`schema.executable` when rebuilding. The functional guarantee the report asks for — the executable token is
+recognized and never lands in `unknownArguments` — is what got fixed and tested; I chose not to add a
+redundant field that would just always equal `schema.executable`, to avoid the two ever silently drifting
+apart. Flagging this as a deliberate design choice rather than an unaddressed requirement.
+
+**Build verification — same environment, same result, now with direct proof:**
+
+```
+$ ./gradlew --version
+Downloading https://services.gradle.org/distributions/gradle-8.9-bin.zip
+Exception in thread "main" java.io.IOException: Server returned HTTP response code: 403 for URL:
+https://services.gradle.org/distributions/gradle-8.9-bin.zip
+	at org.gradle.wrapper.Install.forceFetch(SourceFile:2)
+	at org.gradle.wrapper.GradleWrapperMain.main(SourceFile:67)
+```
+
+The uploaded project *does* now include a real `gradle/wrapper/gradle-wrapper.jar` (43,504 bytes — someone
+completed the one-time step §17 asked for). But that jar is only the bootstrap loader; on first run it still
+needs to download the actual Gradle 8.9 distribution over the network, which fails with the exact same
+`403 host_not_allowed` this sandbox has returned every time throughout this project. This is not a
+re-assertion of the old blocker — it's the same blocker, hit from a different angle, with the literal
+command output above as evidence rather than a claim.
+
+**TEST = NOT RUN**, **BUILD = NOT RUN**, **APK = NOT GENERATED** — unchanged from §17-§19, for the reason
+shown above rather than the reason there (missing jar vs. blocked distribution download — same root cause,
+network egress, different symptom). Every fix in this section is verified the same way as the rest of this
+report: by hand-tracing the actual code against the actual reported input, shown as I worked, not by a
+green test run.
+

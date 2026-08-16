@@ -4,6 +4,7 @@ import com.example.clitoolbox.core.parser.ShellTokenizer
 import com.example.clitoolbox.core.schema.ArgumentType
 import com.example.clitoolbox.core.schema.SchemaArgument
 import com.example.clitoolbox.core.schema.ToolSchema
+import com.example.clitoolbox.tool.ExecutableNameMatcher
 import java.util.UUID
 
 /**
@@ -18,7 +19,15 @@ object CommandParser {
 
     fun parse(schema: ToolSchema, commandString: String): ParsedCommandState {
         var tokens = ShellTokenizer.tokenize(commandString)
-        if (tokens.isNotEmpty() && (tokens.first() == schema.executable || tokens.first().endsWith("/" + schema.executable))) {
+        // The first token is dropped as "this is the tool's own executable" if it
+        // loosely matches the Schema's executable name — loosely, because a
+        // Tool's stored executableName doesn't always exactly match what a user
+        // types (SAF-assigned disambiguation suffixes, version-suffixed binary
+        // names like "7zz_26", a ".exe" extension, case differences). An exact-
+        // only check here previously let a tool's own executable silently fall
+        // through and get misclassified as an unknown argument — see
+        // ExecutableNameMatcher's docs for the full explanation.
+        if (tokens.isNotEmpty() && ExecutableNameMatcher.matches(tokens.first(), schema.executable)) {
             tokens = tokens.drop(1)
         }
         return parseTokens(schema, tokens)
@@ -166,8 +175,10 @@ object CommandParser {
 
     /**
      * Finds a schema argument whose flag is a joined-value prefix of [token]
-     * (e.g. schema flag "-o" against token "-ooutput", or "-mx" against
-     * "-mx9"), for arguments explicitly marked [SchemaArgument.joinedWithValue].
+     * (e.g. schema flag "-o" against token "-ooutput", "-mx" against "-mx9",
+     * or "-mx" against "-mx=9" — an optional "=" right after the flag is
+     * stripped from the value too, so "-mx=9" doesn't end up with a value of
+     * "=9"), for arguments explicitly marked [SchemaArgument.joinedWithValue].
      * Picks the longest matching flag so e.g. "-mx" is preferred over a
      * shorter "-m" if both existed. Returns the argument and the remainder
      * (the value) if found.
@@ -176,7 +187,7 @@ object CommandParser {
         return schema.allArguments()
             .filter { it.joinedWithValue && it.flag != null && token.startsWith(it.flag) && token.length > it.flag.length }
             .maxByOrNull { it.flag!!.length }
-            ?.let { it to token.removePrefix(it.flag!!) }
+            ?.let { it to token.removePrefix(it.flag!!).removePrefix("=") }
     }
 
     private fun isLikelyFlag(token: String) = token.startsWith("-") && token.length > 1 && !token[1].isDigit()

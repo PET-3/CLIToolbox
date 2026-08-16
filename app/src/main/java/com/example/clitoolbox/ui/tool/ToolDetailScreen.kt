@@ -225,35 +225,35 @@ private fun UnknownArgumentsSection(
     onAddClick: () -> Unit,
     onEditClick: (UnknownArgument) -> Unit
 ) {
+    if (unknownArguments.isEmpty()) {
+        // No placeholder block, no "None — ..." text — the section itself
+        // only appears when there's something unknown to show. A minimal,
+        // low-emphasis affordance to add one manually is kept available.
+        TextButton(onClick = onAddClick) { Text("+ Add unknown argument") }
+        return
+    }
     Column {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("Unknown Arguments", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
             TextButton(onClick = onAddClick) { Text("+ Add") }
         }
-        if (unknownArguments.isEmpty()) {
-            Text(
-                "None — every argument in this command matches the Schema.",
-                style = MaterialTheme.typography.bodySmall
-            )
-        } else {
-            Text(
-                "Not recognized by the Schema, but preserved and still included when you execute. Tap to edit:",
-                style = MaterialTheme.typography.bodySmall
-            )
-            Spacer(Modifier.height(4.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(unknownArguments, key = { it.id }) { unknown ->
-                    InputChip(
-                        selected = false,
-                        onClick = { onEditClick(unknown) },
-                        label = { Text(unknown.displayText().ifBlank { "(empty)" }) },
-                        trailingIcon = {
-                            IconButton(onClick = { onRemove(unknown.id) }, modifier = Modifier.size(18.dp)) {
-                                Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp))
-                            }
+        Text(
+            "Not recognized by the Schema, but preserved and still included when you execute. Tap to edit:",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Spacer(Modifier.height(4.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(unknownArguments, key = { it.id }) { unknown ->
+                InputChip(
+                    selected = false,
+                    onClick = { onEditClick(unknown) },
+                    label = { Text(unknown.displayText().ifBlank { "(empty)" }) },
+                    trailingIcon = {
+                        IconButton(onClick = { onRemove(unknown.id) }, modifier = Modifier.size(18.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp))
                         }
-                    )
-                }
+                    }
+                )
             }
         }
     }

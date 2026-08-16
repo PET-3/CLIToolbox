@@ -44,23 +44,15 @@ Settings lets you switch theme (System/Light/Dark) and language (System/English/
 
 ## Local build
 
-Requirements: JDK 17, Android SDK (compileSdk 34).
-
-**⚠ One-time setup required before this will build:** `gradle/wrapper/gradle-wrapper.jar` is **not**
-committed to this repository — it's a binary file that could not be produced in the environment this
-project was developed in (no network access to download it, no local JDK/Gradle to generate it from). Run
-this once, from any machine with a JDK and either a local Gradle install or network access:
+Requirements: JDK 17, Android SDK (compileSdk 34), and network access to `services.gradle.org` (the wrapper
+downloads the actual Gradle 8.9 distribution on first run — see the note below if that's not available in
+your environment).
 
 ```bash
-gradle wrapper --gradle-version 8.9 --distribution-type all
-git add gradle/wrapper/gradle-wrapper.jar
-git commit -m "Add Gradle wrapper jar"
+git clone <this-repo>
+cd CLIToolbox
+./gradlew assembleDebug
 ```
-
-After that one-time commit, `./gradlew` works for everyone who clones the repo from then on — this is not
-a per-checkout step. See `FINAL_REPORT.md` §17 for the full explanation.
-
-```bash
 git clone <this-repo>
 cd CLIToolbox
 ./gradlew assembleDebug
@@ -74,13 +66,21 @@ Run unit tests only:
 ./gradlew test
 ```
 
+> **Status note:** `gradle/wrapper/gradle-wrapper.jar` is committed. Every source file, config, and test in
+> this repo has been reviewed and hand-traced, but nothing here has actually been compiled or executed yet
+> in the environment this project was developed in — that environment has no network access to
+> `services.gradle.org`, so even `./gradlew --version` can't complete there (the wrapper jar is only a
+> bootstrap loader; it still downloads the real Gradle distribution on first run). The first real build
+> needs to happen somewhere with normal network access — see `FINAL_REPORT.md` §21 for the exact command
+> output that demonstrates this.
+
 ## GitHub Actions
 
 `.github/workflows/build.yml` runs on every push to `main` and every pull request (plus manual
 `workflow_dispatch`): checkout → JDK 17 → Gradle 8.9 setup → `./gradlew test` → `./gradlew assembleDebug` →
 locate the APK → upload `cli-toolbox-debug.apk` as a build artifact. No signing key, Keystore, or Play
-Store step — debug APK only, as scoped for this phase. **This workflow will fail until the one-time
-`gradle-wrapper.jar` setup above is committed** — see `FINAL_REPORT.md` §17.
+Store step — debug APK only, as scoped for this phase. GitHub Actions runners have normal network access,
+so this should work there even though it couldn't be verified in this project's development environment.
 
 ## Project layout
 
@@ -115,7 +115,7 @@ app/src/main/java/com/example/clitoolbox/
   real static heuristic, not exhaustive — it can't catch every possible runtime incompatibility.
 - No accounts, cloud sync, online tool marketplace, or plugin marketplace — intentionally out of scope.
 - Release signing / Play Store packaging is not set up; only `assembleDebug` is wired into CI.
-- **`gradle-wrapper.jar` is not committed** — see the one-time setup step above and `FINAL_REPORT.md` §17
-  for why, and exactly what to run once to fix it.
-- This codebase has not been compiled or test-run in the environment it was developed in (no network/JDK/
-  Gradle available there) — see `FINAL_REPORT.md` for the full, honest verification status of every piece.
+- `gradle-wrapper.jar` **is** committed, but this codebase has not been compiled or test-run in the
+  environment it was developed in (no network access there, so even `./gradlew --version` can't finish
+  downloading the actual Gradle distribution) — see `FINAL_REPORT.md` §17 and §21 for the full, honest
+  verification status of every piece, including the exact command output proving this.
