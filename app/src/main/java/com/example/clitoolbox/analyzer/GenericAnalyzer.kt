@@ -2,6 +2,7 @@ package com.example.clitoolbox.analyzer
 
 import com.example.clitoolbox.core.executor.ProcessRunner
 import com.example.clitoolbox.core.model.Tool
+import com.example.clitoolbox.core.model.ToolArchitecture
 import com.example.clitoolbox.core.schema.ArgumentType
 import com.example.clitoolbox.core.schema.SchemaArgument
 import com.example.clitoolbox.core.schema.SchemaGroup
@@ -22,11 +23,11 @@ open class GenericAnalyzer : ToolAnalyzer {
         val binary = File(tool.binaryPath)
         val workDir = binary.parentFile ?: File(tool.binaryPath).parentFile ?: File("/")
 
-        val version = probeFirstSuccess(binary.absolutePath, workDir, listOf(
+        val version = probeFirstSuccess(binary.absolutePath, workDir, tool.architecture, listOf(
             listOf("--version"), listOf("-version"), listOf("-v")
         ))?.stdout?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
 
-        val help = probeFirstSuccess(binary.absolutePath, workDir, listOf(
+        val help = probeFirstSuccess(binary.absolutePath, workDir, tool.architecture, listOf(
             listOf("--help"), listOf("-h"), listOf("-help"), listOf("--usage")
         ))
 
@@ -58,10 +59,11 @@ open class GenericAnalyzer : ToolAnalyzer {
     private fun probeFirstSuccess(
         executable: String,
         workDir: File,
+        architecture: ToolArchitecture,
         candidateArgLists: List<List<String>>
     ): com.example.clitoolbox.core.executor.ProbeResult? {
         for (args in candidateArgLists) {
-            val result = ProcessRunner.probe(executable, args, workDir, timeoutSeconds = 5)
+            val result = ProcessRunner.probe(executable, args, workDir, timeoutSeconds = 5, architecture = architecture)
             if (!result.timedOut && (result.stdout.isNotBlank() || result.stderr.isNotBlank())) {
                 return result
             }

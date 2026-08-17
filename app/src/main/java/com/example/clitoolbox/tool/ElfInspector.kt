@@ -187,4 +187,54 @@ object ElfInspector {
         }
         return value
     }
+
+    /**
+     * Whether [file] has a PT_INTERP program header at all — i.e. is
+     * dynamically linked. [ExecutableLauncher]'s system-linker workaround for
+     * Android's exec-from-app-data restriction only works for dynamically
+     * linked binaries (see its class doc); a statically linked binary needs
+     * this to be known so that limitation can be reported accurately instead
+     * of failing with a generic, confusing error.
+     *
+     * Deliberately independent of [inspectAndroidCompatibility]'s internals
+     * (some duplicated parsing) rather than refactored to share code with it,
+     * so this addition can't risk changing that already-verified function's
+     * behavior.
+     */
+    fun hasDynamicInterpreter(file: File): Boolean {
+        return try {
+            RandomAccessFile(file, "r").use { raf ->
+                val length = raf.length()
+                if (length < 64) return false
+
+                raf.seek(4)
+                val eiClass = raf.read()
+                raf.seek(5)
+                val eiData = raf.read()
+                if (eiClass !in 1..2 || eiData !in 1..2) return false
+                val is64 = eiClass == 2
+                val little = eiData == 1
+
+                val phoffOffset = if (is64) 32L else 28L
+                val phentsizeOffset = if (is64) 54L else 42L
+                val phnumOffset = if (is64) 56L else 44L
+
+                val phoff = readUInt(raf, phoffOffset, if (is64) 8 else 4, little)
+                val phentsize = readUInt(raf, phentsizeOffset, 2, little).toInt()
+                val phnum = readUInt(raf, phnumOffset, 2, little).toInt()
+
+                if (phoff <= 0 || phentsize <= 0 || phnum !in 1..256) return false
+
+                for (i in 0 until phnum) {
+                    val entryOffset = phoff + i.toLong() * phentsize
+                    if (entryOffset + phentsize > length) break
+                    val pType = readUInt(raf, entryOffset, 4, little)
+                    if (pType.toInt() == PT_INTERP) return true
+                }
+                false
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
 }

@@ -29,7 +29,7 @@ class SevenZipAnalyzer : GenericAnalyzer() {
         val binary = File(tool.binaryPath)
         val workDir = binary.parentFile ?: File("/")
 
-        val probe = ProcessRunner.probe(binary.absolutePath, emptyList(), workDir, 5)
+        val probe = ProcessRunner.probe(binary.absolutePath, emptyList(), workDir, 5, tool.architecture)
         if (probe.timedOut) {
             return ToolAnalysisResult.AnalysisFailed("7-Zip did not respond within timeout.")
         }

@@ -1,5 +1,6 @@
 package com.example.clitoolbox.core.executor
 
+import com.example.clitoolbox.core.model.ToolArchitecture
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -30,18 +31,70 @@ class CommandExecutor {
     /**
      * @param argv full command, e.g. ["/data/.../ffmpeg", "-i", "in.mp4", "out.mp4"].
      *   Never built by string concatenation/interpolation into a shell command.
+     *   argv[0] must be the imported binary's own absolute path — wrapping it
+     *   through the system linker (see [ExecutableLauncher]) happens here.
+     * @param architecture the imported binary's detected CPU architecture, used
+     *   to pick the right system linker and work around Android 10+'s
+     *   exec-from-app-data-directory restriction. Pass null only for a binary
+     *   known not to live in this app's private storage (there currently isn't
+     *   one — every Tool is imported into app-private storage — so real
+     *   callers should always pass this).
      */
-    fun execute(argv: List<String>, workingDir: File, environment: Map<String, String> = emptyMap()): Flow<ExecutionEvent> = executeInternal(argv, workingDir, environment).flowOn(Dispatchers.IO)
+    fun execute(
+        argv: List<String>,
+        workingDir: File,
+        environment: Map<String, String> = emptyMap(),
+        architecture: ToolArchitecture? = null
+    ): Flow<ExecutionEvent> = executeInternal(argv, workingDir, environment, architecture).flowOn(Dispatchers.IO)
 
-    private fun executeInternal(argv: List<String>, workingDir: File, environment: Map<String, String>): Flow<ExecutionEvent> = callbackFlow {
+    private fun executeInternal(
+        argv: List<String>,
+        workingDir: File,
+        environment: Map<String, String>,
+        architecture: ToolArchitecture?
+    ): Flow<ExecutionEvent> = callbackFlow {
         require(argv.isNotEmpty()) { "argv must not be empty" }
 
         trySend(ExecutionEvent.StateChanged(ExecutionState.RUNNING))
 
+        // Final protective check, right before actually launching anything:
+        // verify the binary genuinely looks executable (exists, is a regular
+        // file, is readable, has the executable bit set) so a broken import
+        // fails with a clear, specific message here instead of an opaque
+        // ProcessBuilder IOException below. This does NOT catch Android
+        // 10+'s SELinux exec restriction (canExecute() only reads the POSIX
+        // bit, which SELinux ignores) — that's what the linker wrap below is
+        // for — but it does catch e.g. the file having been deleted or
+        // corrupted since import.
+        val binaryFile = File(argv.first())
+        val preflightError = when {
+            !binaryFile.exists() -> "Tool binary no longer exists at ${binaryFile.absolutePath}."
+            !binaryFile.isFile -> "Tool path is not a regular file: ${binaryFile.absolutePath}."
+            !binaryFile.canRead() -> "Tool binary is not readable: ${binaryFile.absolutePath}."
+            !binaryFile.canExecute() -> "Tool binary is not marked executable: ${binaryFile.absolutePath}."
+            else -> null
+        }
+        if (preflightError != null) {
+            trySend(ExecutionEvent.Stderr(preflightError))
+            trySend(ExecutionEvent.Finished(null, ExecutionState.FAILED))
+            close()
+            return@callbackFlow
+        }
+
+        // Work around Android 10+'s "exec from app-private-data-directory"
+        // SELinux restriction: exec the trusted system linker instead of the
+        // app-data binary directly. See ExecutableLauncher's doc for the
+        // full explanation. architecture is null only for a binary that
+        // (uniquely, currently never the case) isn't in app-private storage.
+        val effectiveArgv = if (architecture != null) ExecutableLauncher.wrap(argv, architecture) else argv
+
+        val effectiveEnvironment = if ("LD_LIBRARY_PATH" in environment) environment else
+            environment + ("LD_LIBRARY_PATH" to workingDir.absolutePath)
+
         val process = try {
-            ProcessBuilder(argv).apply {
+            ProcessBuilder(effectiveArgv).apply {
                 directory(workingDir)
-                environment().putAll(environment)
+                environment().putAll(effectiveEnvironment)
                 redirectErrorStream(false)
             }.start()
         } catch (e: Exception) {

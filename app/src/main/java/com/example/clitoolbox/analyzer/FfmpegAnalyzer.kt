@@ -40,7 +40,7 @@ class FfmpegAnalyzer : GenericAnalyzer() {
         internal fun queryEncoders(tool: Tool, videoOnly: Boolean): List<String> {
             val binary = File(tool.binaryPath)
             val workDir = binary.parentFile ?: File("/")
-            val encoders = ProcessRunner.probe(binary.absolutePath, listOf("-hide_banner", "-encoders"), workDir, 5)
+            val encoders = ProcessRunner.probe(binary.absolutePath, listOf("-hide_banner", "-encoders"), workDir, 5, tool.architecture)
             return extractCodecNames(encoders.stdout, videoOnly)
         }
 
@@ -70,7 +70,7 @@ class FfmpegAnalyzer : GenericAnalyzer() {
         val binary = File(tool.binaryPath)
         val workDir = binary.parentFile ?: File("/")
 
-        val versionProbe = ProcessRunner.probe(binary.absolutePath, listOf("-hide_banner", "-version"), workDir, 5)
+        val versionProbe = ProcessRunner.probe(binary.absolutePath, listOf("-hide_banner", "-version"), workDir, 5, tool.architecture)
         if (versionProbe.timedOut || (versionProbe.stdout.isBlank() && versionProbe.stderr.isBlank())) {
             return ToolAnalysisResult.AnalysisFailed("ffmpeg -version produced no output (timeout or exec failure).")
         }
@@ -131,7 +131,7 @@ class FfmpegAnalyzer : GenericAnalyzer() {
         val schema = ToolSchema(
             toolName = tool.name.ifBlank { "FFmpeg" },
             executable = tool.executableName,
-            groups = listOfNotNull(inputGroup, videoGroup, audioGroup, outputGroup, buildAdvancedGroup(binary, workDir, inputGroup, videoGroup, audioGroup, outputGroup)),
+            groups = listOfNotNull(inputGroup, videoGroup, audioGroup, outputGroup, buildAdvancedGroup(tool, binary, workDir, inputGroup, videoGroup, audioGroup, outputGroup)),
             positionalOrder = listOf("output_file")
         )
 
@@ -152,10 +152,10 @@ class FfmpegAnalyzer : GenericAnalyzer() {
      * already covered by the curated groups are skipped so there's no
      * duplicate/conflicting SchemaArgument for the same flag.
      */
-    private fun buildAdvancedGroup(binary: File, workDir: File, vararg curatedGroups: SchemaGroup): SchemaGroup? {
-        val fullHelp = ProcessRunner.probe(binary.absolutePath, listOf("-hide_banner", "-h", "full"), workDir, 5)
+    private fun buildAdvancedGroup(tool: Tool, binary: File, workDir: File, vararg curatedGroups: SchemaGroup): SchemaGroup? {
+        val fullHelp = ProcessRunner.probe(binary.absolutePath, listOf("-hide_banner", "-h", "full"), workDir, 5, tool.architecture)
         val helpText = fullHelp.stdout.ifBlank {
-            ProcessRunner.probe(binary.absolutePath, listOf("-hide_banner", "-h"), workDir, 5).stdout
+            ProcessRunner.probe(binary.absolutePath, listOf("-hide_banner", "-h"), workDir, 5, tool.architecture).stdout
         }
         val curatedFlags = curatedGroups.flatMap { it.arguments }.mapNotNull { it.flag }.toSet()
         return mergeAdvancedGroup(helpText, curatedFlags)

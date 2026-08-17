@@ -392,3 +392,97 @@ network egress, different symptom). Every fix in this section is verified the sa
 report: by hand-tracing the actual code against the actual reported input, shown as I worked, not by a
 green test run.
 
+## 22. Phase 5 — real device bug: `error=13, Permission denied` at ProcessBuilder.start()
+
+A second real device test: after the Phase 4 fix, Schema/Graphical looked correct and GUI generated
+`7zz_26 -y a test.7z content://...`, but pressing Execute failed immediately —
+`Cannot run program "7zz_26" (in directory ".../bin"): error=13, Permission denied`, at
+`ProcessBuilder.start()` itself. The report was explicit that this is not a Parser/Schema/content-URI issue
+and asked for a fix specifically in the Tool Import / Installation / Executable Preparation chain.
+
+**Root cause — a real, documented Android platform restriction, not a simple missing-chmod bug:**
+starting with Android 10 (API 29), Google's own behavior-changes documentation states plainly: *"Execution
+of files from the writable app home directory is a W^X violation... Untrusted apps that target Android 10
+cannot invoke execve() directly on files within the app's home directory."* This is enforced by SELinux at
+the kernel level, independent of Unix permission bits — `chmod 755` / `File.setExecutable(true)` both
+report success, `File.canExecute()` correctly returns `true` (it only reads the POSIX bit), and the OS
+*still* refuses to actually launch the file, which is exactly the `error=13` reported. No amount of chmod
+can fix this — it was never a permission-bit problem in the Unix sense.
+
+**The fix — the same technique Termux uses**, confirmed independently via Termux's own technical
+documentation (`termux-exec`'s "system linker execution"): never let the kernel `execve()` the untrusted
+app-data file directly. Instead, exec the *trusted* system dynamic linker (`/system/bin/linker` /
+`/system/bin/linker64`, which SELinux permits — it carries the system linker's own file context) and hand
+our binary to it as an argument. The linker loads and runs it internally; the kernel never sees a fresh
+`execve()` on the app-data file, so the SELinux rule never triggers. This is a legitimate `ProcessBuilder`
+invocation with an explicit argv — not a shell, not `sh -c`, not root — satisfying the report's explicit
+rule against working around this via a shell escape.
+
+**Important limitation surfaced by the same research (and directly checked for, not glossed over):** this
+technique only works for *dynamically linked* binaries — one with a `PT_INTERP` program header. A fully
+statically linked binary doesn't go through the dynamic linker at all, so the workaround cannot apply to
+it, and (per the same SELinux policy) it has no other route to run from app-private storage within this
+app's constraints (no root, no shell, no build-time-only native-library packaging for a binary the user
+imports at runtime). The code detects this distinction and reports it accurately rather than either
+silently failing the same generic way or falsely claiming a fix that doesn't exist for that case.
+
+**Files changed:**
+
+- **New `core/executor/ExecutableLauncher.kt`** — pure, fully unit-testable: picks the right system linker
+  for a detected `ToolArchitecture` and wraps an argv with it. No file-system or Android dependency at all.
+- **`tool/ElfInspector.kt`** — added `hasDynamicInterpreter()`, a small independent PT_INTERP-presence check
+  (deliberately not sharing code with the already-tested `inspectAndroidCompatibility`, so this addition
+  can't risk changing that function's verified behavior).
+- **`core/executor/ProcessRunner.kt`** — `ProbeResult` gained `processStarted: Boolean` (false only when
+  `ProcessBuilder.start()` itself threw — the reliable "did this actually launch" signal, independent of
+  exit code or timeout). `probe()` gained an optional `architecture: ToolArchitecture?` parameter (default
+  `null` — every existing test that doesn't pass it is completely unaffected, still exercising the plain
+  unwrapped path exactly as before) that wraps argv through `ExecutableLauncher` when provided.
+- **`core/executor/CommandExecutor.kt`** — the actual Execute path. Added the exact pre-flight check the
+  report asked for (`file.exists()` / `isFile` / `canRead()` / `canExecute()`, reported as a clear `FAILED`
+  state instead of an opaque `ProcessBuilder` exception if any fail), then wraps argv through
+  `ExecutableLauncher` using the Tool's architecture, and defaults `LD_LIBRARY_PATH` to the tool's own
+  directory (defensive — for any binary with a co-located `.so` dependency).
+- **`tool/ToolImporter.kt`** — this is where requirement #3/#4 (verify at import time, not defer to
+  Execute) actually lives now: `applyExecutablePermission()` sets the executable bit via Java, then falls
+  back to invoking `/system/bin/chmod` directly (explicit argv, not a shell) if that didn't take; then,
+  after ELF/ABI/compatibility checks pass, `verifyLaunchable()` genuinely attempts to launch the binary
+  (wrapped through the linker, 3-second timeout) and rejects the import with a specific "Tool is not
+  executable" message — distinguishing the static-linking case from a generic launch failure — rather than
+  accepting a broken import that would only fail later at Execute.
+- **`tool/ExecutionSession.kt`**, **`ui/tool/ToolDetailScreen.kt`**, **`ui/execute/ExecutionScreen.kt`** —
+  threaded `Tool.architecture` through the handoff from Tool Detail to the Execution screen, since
+  `CommandExecutor` needs it to pick the right linker.
+- **`analyzer/GenericAnalyzer.kt`**, **`analyzer/FfmpegAnalyzer.kt`**, **`analyzer/SevenZipAnalyzer.kt`** —
+  every `ProcessRunner.probe()` call site now passes `tool.architecture`, addressing requirement #6
+  directly: Analyzers use the exact same `ProcessBuilder.start()` path and were subject to the exact same
+  restriction — silently, since `ProbeResult`'s graceful-degradation design meant a probe failing this way
+  never surfaced as an error, only as a slightly thinner Schema. This is applied uniformly across all three
+  analyzers (7zz, ffmpeg, generic), not special-cased to 7-Zip, per requirement #5.
+
+**Explicitly not touched, per the report's instruction:** `SevenZipAnalyzer`'s parsing logic, `CommandParser`,
+`Schema` shape, Unknown Arguments handling, and Graphical generation — none of Phase 4's fixes needed any
+change for this; this phase is entirely in the import/executor layer.
+
+**New tests:** `ExecutableLauncherTest` (6 cases — pure logic, no Android dependency), 4 new
+`hasDynamicInterpreter` cases added to `ToolCompatibilityTest` (byte-accurate synthetic ELF files, same
+approach as its existing tests), `ProcessRunnerTest` (2 cases: `processStarted` correctly false for a
+process that never launched, and confirming the unwrapped default path is unaffected). 12 new tests this
+phase; 75 total across 11 files.
+
+**Build verification — re-checked fresh for this phase, same result:**
+
+```
+$ ./gradlew --version
+Downloading https://services.gradle.org/distributions/gradle-8.9-bin.zip
+Exception in thread "main" java.io.IOException: Server returned HTTP response code: 403 ...
+```
+
+Nothing has changed about this sandbox's network access between phases. **TEST = NOT RUN**, **BUILD = NOT
+RUN**, **APK = NOT GENERATED**, for the same reason as §21. Every fix in this section is verified by
+tracing the actual code against the actual reported error and cross-checking the platform behavior against
+two independent sources (Google's own developer documentation and Termux's own technical documentation for
+the exact workaround) — not by a device test, which I have no way to run, and not by a local build, which
+this environment cannot complete. If you can run this on the real device that produced the original
+`error=13` report, that's the test that actually matters here, and I'd want to know what it shows.
+

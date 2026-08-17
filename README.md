@@ -113,6 +113,11 @@ app/src/main/java/com/example/clitoolbox/
   unknown-argument handling.
 - `ElfInspector`'s Android-compatibility check (PT_INTERP classification + GLIBC_ symbol-version scan) is a
   real static heuristic, not exhaustive — it can't catch every possible runtime incompatibility.
+- **Statically linked tool binaries cannot currently be launched.** Android 10+ blocks executing any file
+  placed in an app's private storage (SELinux W^X policy); the workaround this app uses (handing the
+  binary to the system dynamic linker instead of exec'ing it directly — the same technique Termux uses)
+  only works for dynamically linked binaries. A statically linked import is rejected at import time with a
+  clear explanation rather than failing confusingly later — see `FINAL_REPORT.md` §22.
 - No accounts, cloud sync, online tool marketplace, or plugin marketplace — intentionally out of scope.
 - Release signing / Play Store packaging is not set up; only `assembleDebug` is wired into CI.
 - `gradle-wrapper.jar` **is** committed, but this codebase has not been compiled or test-run in the

@@ -136,4 +136,34 @@ class ToolCompatibilityTest {
         assertEquals(com.example.clitoolbox.core.model.ToolArchitecture.ARM64_V8A, elfInfo.architecture)
         assertEquals(AndroidCompatibility.LIKELY_INCOMPATIBLE_GLIBC, ElfInspector.inspectAndroidCompatibility(file))
     }
+
+    // ---- hasDynamicInterpreter — used to decide whether ExecutableLauncher's
+    // system-linker workaround can even apply to a given binary -------------
+
+    @Test
+    fun `a binary with a PT_INTERP program header is reported as dynamically linked`() {
+        val file = writeTempElf(buildElfWithInterp("/system/bin/linker64"))
+        assertEquals(true, ElfInspector.hasDynamicInterpreter(file))
+    }
+
+    @Test
+    fun `a binary with no program headers at all is reported as statically linked`() {
+        val file = writeTempElf(buildStaticElf())
+        assertEquals(false, ElfInspector.hasDynamicInterpreter(file))
+    }
+
+    @Test
+    fun `a truncated file is reported as not dynamically linked rather than throwing`() {
+        val file = writeTempElf(byteArrayOf(0x7F, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte()))
+        assertEquals(false, ElfInspector.hasDynamicInterpreter(file))
+    }
+
+    @Test
+    fun `hasDynamicInterpreter is true regardless of which interpreter is named`() {
+        // It only answers "is this binary dynamically linked at all", not
+        // whether that interpreter is Android- or glibc-flavored — that's a
+        // separate question, answered by inspectAndroidCompatibility.
+        val glibcFile = writeTempElf(buildElfWithInterp("/lib64/ld-linux-x86-64.so.2"))
+        assertEquals(true, ElfInspector.hasDynamicInterpreter(glibcFile))
+    }
 }

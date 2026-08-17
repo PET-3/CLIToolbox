@@ -48,7 +48,7 @@ fun ExecutionScreen(onBack: () -> Unit) {
     LaunchedEffect(pending) {
         if (pending == null || started) return@LaunchedEffect
         started = true
-        executor.execute(pending.argv, File(pending.workingDir)).collect { event ->
+        executor.execute(pending.argv, File(pending.workingDir), architecture = pending.architecture).collect { event ->
             when (event) {
                 is ExecutionEvent.StateChanged -> state = event.state
                 is ExecutionEvent.Stdout -> lines.add(false to event.line)

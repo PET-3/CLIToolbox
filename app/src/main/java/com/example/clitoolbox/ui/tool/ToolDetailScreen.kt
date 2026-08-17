@@ -185,7 +185,8 @@ fun ToolDetailScreen(
                         toolName = tool!!.name,
                         argv = argv,
                         commandString = CommandBuilder.buildCommandString(schema, effective.values, effective.unknownArguments, effective.flagOrder),
-                        workingDir = workDir.absolutePath
+                        workingDir = workDir.absolutePath,
+                        architecture = tool!!.architecture
                     )
                     onExecute()
                 },
